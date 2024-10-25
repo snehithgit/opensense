@@ -1,50 +1,38 @@
-name: Build OPNsense for NanoPi R5S
+#!/bin/sh
 
-# Run this workflow on pushes to the main branch and pull requests
-on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+VERSION=24.7
+MINOR=.6
 
-# Define the job
-jobs:
-  build:
-    # Runs on an Ubuntu machine, as FreeBSD isn't natively supported on GitHub Actions
-    runs-on: ubuntu-latest
+if [ -n "$1" ]; then
+ SRC_DIR=$1
+else
+ SRC_DIR=/usr/local/opnsense/build/${VERSION}/aarch64
+fi
 
-    # Steps to set up the environment and build the project
-    steps:
-      # Checkout the code from the repository
-      - name: Checkout code
-        uses: actions/checkout@v3
+echo "AA: $SRC_DIR"
+DEST_DIR=/usr/local/opnsense/repo/FreeBSD:14:aarch64
 
-      # Set up dependencies needed for the build process
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y qemu-user-static debootstrap binfmt-support
+# Create the destination dir
+mkdir -p $DEST_DIR/${VERSION}
 
-      # Set up FreeBSD environment using chroot
-      - name: Set up FreeBSD chroot environment
-        run: |
-          sudo debootstrap --arch=arm64 focal /mnt/freebsd-root http://archive.ubuntu.com/ubuntu
-          sudo mount -t proc none /mnt/freebsd-root/proc
-          sudo mount -t sysfs none /mnt/freebsd-root/sys
-          sudo mount --rbind /dev /mnt/freebsd-root/dev
-          sudo cp /usr/bin/qemu-aarch64-static /mnt/freebsd-root/usr/bin
+# setting the "sets" dir
+mkdir $DEST_DIR/${VERSION}/sets
 
-      # Copy the build scripts and run them
-      - name: Run OPNsense build scripts
-        run: |
-          cd /mnt/freebsd-root
-          sudo chroot /mnt/freebsd-root /bin/bash -c "cd /github/workspace && ./1.1-fetch_update.sh && ./2-base.sh && ./3-kernel.sh && ./9-arm.sh"
+for file in $SRC_DIR/sets/*
+do
+ echo "==> Copy $file"
+ cp $file $DEST_DIR/${VERSION}/sets/
+done
 
-      # Archive the output artifacts (e.g., image file)
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: opnsense-nanopi-r5s
-          path: /mnt/freebsd-root/github/workspace/output/*.img
+# setting the "latest" dir in MINT TREE, using minor version if present
+mkdir -p $DEST_DIR/${VERSION}/MINT/${VERSION}${MINOR}/latest
+
+PKG_FILE=`ls -1 $SRC_DIR/sets/ | grep package | grep -v sig`
+echo $PKG_FILE
+tar xvf $SRC_DIR/sets/$PKG_FILE -C $DEST_DIR/${VERSION}/MINT/${VERSION}${MINOR}/latest
+
+# setting the "latest" dir in repository root. Will point to the latest build
+ln -sf $DEST_DIR/${VERSION}/MINT/${VERSION}${MINOR}/latest $DEST_DIR/${VERSION}/latest
+
+# setting the "latest" dir using ln
+#mkdir $DEST_DIR/${VERSION}/latest
