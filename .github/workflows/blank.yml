@@ -1,0 +1,50 @@
+name: Build OPNsense for NanoPi R5S
+
+# Run this workflow on pushes to the main branch and pull requests
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+# Define the job
+jobs:
+  build:
+    # Runs on an Ubuntu machine, as FreeBSD isn't natively supported on GitHub Actions
+    runs-on: ubuntu-latest
+
+    # Steps to set up the environment and build the project
+    steps:
+      # Checkout the code from the repository
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Set up dependencies needed for the build process
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static debootstrap binfmt-support
+
+      # Set up FreeBSD environment using chroot
+      - name: Set up FreeBSD chroot environment
+        run: |
+          sudo debootstrap --arch=arm64 focal /mnt/freebsd-root http://archive.ubuntu.com/ubuntu
+          sudo mount -t proc none /mnt/freebsd-root/proc
+          sudo mount -t sysfs none /mnt/freebsd-root/sys
+          sudo mount --rbind /dev /mnt/freebsd-root/dev
+          sudo cp /usr/bin/qemu-aarch64-static /mnt/freebsd-root/usr/bin
+
+      # Copy the build scripts and run them
+      - name: Run OPNsense build scripts
+        run: |
+          cd /mnt/freebsd-root
+          sudo chroot /mnt/freebsd-root /bin/bash -c "cd /github/workspace && ./1.1-fetch_update.sh && ./2-base.sh && ./3-kernel.sh && ./9-arm.sh"
+
+      # Archive the output artifacts (e.g., image file)
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: opnsense-nanopi-r5s
+          path: /mnt/freebsd-root/github/workspace/output/*.img
